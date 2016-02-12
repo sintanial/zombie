@@ -16,6 +16,8 @@ const WebSocket       = require('ws');
 const Window          = require('jsdom/lib/jsdom/browser/Window');
 const XMLHttpRequest  = require('./xhr');
 
+const _             = require('lodash');
+
 
 // File access, not implemented yet
 class File {
@@ -26,8 +28,11 @@ class File {
 class Screen {
   constructor() {
     this.top = this.left = 0;
-    this.width = 1280;
-    this.height = 800;
+    this.width = 640;
+    this.height = 960;
+
+    this._availWidth = 640;
+    this._availHeight = 960;
   }
 
   get availLeft() {
@@ -37,10 +42,10 @@ class Screen {
     return 0;
   }
   get availWidth() {
-    return 1280;
+    return this._availWidth;
   }
   get availHeight() {
-    return 800;
+    return this._availHeight;
   }
   get colorDepth() {
     return 24;
@@ -114,19 +119,24 @@ function setupWindow(window, args) {
   const emptySet = [];
   emptySet.item = ()=> undefined;
   emptySet.namedItem = ()=> undefined;
+
+  _.assign(window.navigator, browser.navigator);
+
   window.navigator = {
     appName:        'Zombie',
+    appCodeName:    'Zombie',
     appVersion:     browser.constructor.VERSION,
     cookieEnabled:  true,
     javaEnabled:    ()=> false,
     language:       browser.language,
     mimeTypes:      emptySet,
-    noUI:           true,
     platform:       process.platform,
     plugins:        emptySet,
     userAgent:      browser.userAgent,
     vendor:         'Zombie Industries'
   };
+
+  window.navigator = _.assign(window.navigator, browser.navigator);
 
   // Add cookies, storage, alerts/confirm, XHR, WebSockets, JSON, Screen, etc
   Object.defineProperty(window, 'cookies', {
@@ -142,6 +152,9 @@ function setupWindow(window, args) {
   window.MutationEvent =  DOM.MutationEvent;
   window.UIEvent =        DOM.UIEvent;
   window.screen =         new Screen();
+
+  if (browser.width) window.screen.width = window.screen._availWidth = browser.width;
+  if (browser.height) window.screen.height = window.screen._availHeight = browser.height;
 
   // Fetch API
   window.fetch =          window.resources._fetch.bind(window.resources);

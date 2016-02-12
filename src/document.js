@@ -95,6 +95,11 @@ function setupWindow(window, args) {
 
   let   closed        = false;
 
+  // Catch all errors
+  window.onerror = ((message, filename, lineno, colno, error) => {
+    window._eventQueue.enqueue(() => browser.emit('error', error));
+  });
+
   // Access to browser
   Object.defineProperty(window, 'browser', {
     value:      browser,
@@ -177,10 +182,14 @@ function setupWindow(window, args) {
   window.URL = DOMURL;
 
   // Web sockets
+  window._allWebSockets = [];
+
   window.WebSocket = function(url, protocol) {
     url = resourceLoader.resolveResourceUrl(document, url);
     const origin = `${window.location.protocol}//${window.location.host}`;
-    return new WebSocket(url, { origin, protocol });
+    const ws = new WebSocket(url, { origin, protocol });
+    window._allWebSockets.push(ws);
+    return ws;
   };
   window.WebSocket.CONNECTING = 0;
   window.WebSocket.OPEN = 1;
@@ -315,6 +324,11 @@ function setupWindow(window, args) {
       return;
     closed = true;
 
+    for (const ws of window._allWebSockets) {
+      ws.removeAllListeners();
+      ws.close();
+    }
+
     // Close all frames first
     for (let i = 0; i < window._length; ++i)
       if (window[i])
@@ -407,6 +421,33 @@ function setupWindow(window, args) {
     targetWindow._history.submit(modified);
   };
 
+  // Overload jsdom postMessage function, which is added to the window object
+  // when created jsdom/lib/jsdom/browser/Window.js.
+  // This is needed because jsdom's implementation does not define the source
+  // and origin attributes in the issued events.
+  // This implementation should be dropped in favor of
+  // jsdom/lib/jsdom/living/post-message.js when it supports source and origin.
+  window.postMessage = function(data) {
+    const baseEvent = this.document.createEvent('MessageEvent');
+    baseEvent.initEvent('message', false, false);
+    const event = Object.assign({}, baseEvent);  // ok that's ugly, but we need to patch an immutable object
+    event.data = data;
+
+    // Window A (source) calls B.postMessage, to determine A we need the
+    // caller's window.
+
+    // DDOPSON-2012-11-09 - _windowInScope.getGlobal() is used here so that for
+    // website code executing inside the sandbox context, event.source ==
+    // window. Even though the _windowInScope object is mapped to the sandboxed
+    // version of the object returned by getGlobal, they are not the same object
+    // ie, _windowInScope.foo == _windowInScope.getGlobal().foo, but
+    // _windowInScope != _windowInScope.getGlobal()
+    event.source = (this.browser._windowInScope || this);
+    const origin = event.source.location;
+    event.origin = URL.format({ protocol: origin.protocol, host: origin.host });
+    this.dispatchEvent(event);
+  };
+
   // JSDOM fires DCL event on document but not on window
   function windowLoaded(event) {
     document.removeEventListener('DOMContentLoaded', windowLoaded);
@@ -417,28 +458,6 @@ function setupWindow(window, args) {
   // Window is now open, next load the document.
   browser.emit('opened', window);
 }
-
-
-// Help iframes talking with each other
-Window.prototype.postMessage = function(data) {
-  // Create the event now, but dispatch asynchronously
-  const event = this.document.createEvent('MessageEvent');
-  event.initEvent('message', false, false);
-  event.data = data;
-  // Window A (source) calls B.postMessage, to determine A we need the
-  // caller's window.
-
-  // DDOPSON-2012-11-09 - _windowInScope.getGlobal() is used here so that for
-  // website code executing inside the sandbox context, event.source ==
-  // window. Even though the _windowInScope object is mapped to the sandboxed
-  // version of the object returned by getGlobal, they are not the same object
-  // ie, _windowInScope.foo == _windowInScope.getGlobal().foo, but
-  // _windowInScope != _windowInScope.getGlobal()
-  event.source = (this.browser._windowInScope || this);
-  const origin = event.source.location;
-  event.origin = URL.format({ protocol: origin.protocol, host: origin.host });
-  this.dispatchEvent(event);
-};
 
 
 // Change location
@@ -709,5 +728,3 @@ module.exports = function loadDocument(args) {
   });
   return document;
 };
-
-

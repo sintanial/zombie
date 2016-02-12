@@ -62,7 +62,7 @@ module.exports = class Console {
   }
 
   timeEnd(name) {
-    const start = this.timers.set(name);
+    const start = this.timers.get(name);
     this.timers.delete(name);
     const message = `${name}: ${Date.now() - start}ms`;
     this.browser.emit('console', 'log', message);

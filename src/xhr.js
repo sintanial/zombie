@@ -84,9 +84,11 @@ class XMLHttpRequest {
       throw new DOMException(DOMException.NOT_SUPPORTED_ERR, 'Only HTTP/S protocol supported');
     url.hostname = url.hostname || this._window.location.hostname;
     url.host = url.port ? `${url.hostname}:${url.port}` : url.hostname;
-    if (url.host !== this._window.location.host) {
-      headers.set('Origin', `${this._window.location.protocol}//${this._window.location.host}`);
-      this._cors = headers.get('Origin');
+    if (this._browser.allowCors !== false) {
+      if (url.host !== this._window.location.host) {
+        headers.set('Origin', `${this._window.location.protocol}//${this._window.location.host}`);
+        this._cors = headers.get('Origin');
+      }
     }
     url.hash = null;
     if (user)
@@ -168,7 +170,7 @@ class XMLHttpRequest {
       }
 
       // CORS request, check origin, may lead to new error
-      if (this._cors) {
+      if (this._browser.allowCors !== false && this._cors) {
         const allowedOrigin = response.headers.get('Access-Control-Allow-Origin');
         if (!(allowedOrigin === '*' || allowedOrigin === this._cors)) {
           this._error = new DOMException(DOMException.SECURITY_ERR, 'Cannot make request to different domain');
